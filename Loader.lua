@@ -1,6 +1,13 @@
--- CONFIGS
-local aimEnabled = true
-local aimFOV = 350  -- Campo de visão em pixels
+--[[
+    Aimbot + ESP com Interface Moderna
+    Compatível com exploits como Synapse X, KRNL, Fluxus, etc.
+    Feito para jogos com TeamCheck e personagens com HumanoidRootPart
+--]]
+
+-- CONFIGURAÇÕES
+local aimEnabled = true  -- Ativar/Desativar Aimbot
+local aimFOV = 350       -- Campo de visão (FOV)
+local smoothing = 0.1    -- Suavização do movimento do Aimbot
 local players = game:GetService("Players")
 local localPlayer = players.LocalPlayer
 local camera = workspace.CurrentCamera
@@ -46,6 +53,7 @@ status.TextColor3 = Color3.fromRGB(200, 200, 200)
 status.BackgroundTransparency = 1
 status.Parent = frame
 
+-- Função para alternar o Aimbot
 toggle.MouseButton1Click:Connect(function()
     aimEnabled = not aimEnabled
     toggle.Text = aimEnabled and "Desativar Aimbot" or "Ativar Aimbot"
@@ -53,7 +61,14 @@ toggle.MouseButton1Click:Connect(function()
     status.Text = "Aimbot: " .. (aimEnabled and "Ativo" or "Inativo")
 end)
 
--- ESP
+-- FUNÇÕES AUXILIARES
+
+-- Checa se o jogador é inimigo
+local function isEnemy(player)
+    return player.Team ~= localPlayer.Team and player.Character and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0
+end
+
+-- Cria e retorna o ESP do jogador
 local function createESP(player)
     local box = Drawing.new("Square")
     box.Color = Color3.fromRGB(255, 0, 0)
@@ -64,35 +79,22 @@ local function createESP(player)
     return box
 end
 
-local espBoxes = {}
-
-for _, p in pairs(players:GetPlayers()) do
-    if p ~= localPlayer then
-        espBoxes[p] = createESP(p)
-    end
+-- Função para calcular a distância entre dois pontos na tela
+local function calculateDistanceFromCenter(x, y)
+    local screenCenterX = camera.ViewportSize.X / 2
+    local screenCenterY = camera.ViewportSize.Y / 2
+    return math.sqrt((x - screenCenterX)^2 + (y - screenCenterY)^2)
 end
 
-players.PlayerAdded:Connect(function(p)
-    if p ~= localPlayer then
-        espBoxes[p] = createESP(p)
-    end
-end)
-
-players.PlayerRemoving:Connect(function(p)
-    if espBoxes[p] then
-        espBoxes[p]:Remove()
-        espBoxes[p] = nil
-    end
-end)
-
--- Aimbot: Encontra inimigo mais próximo do centro da tela
+-- Função para obter o inimigo mais próximo
 local function getClosestEnemy()
-    local closest, minDist = nil, aimFOV
+    local closest = nil
+    local minDist = aimFOV
     for _, p in ipairs(players:GetPlayers()) do
-        if p ~= localPlayer and p.Team ~= localPlayer.Team and p.Character and p.Character:FindFirstChild("HumanoidRootPart") and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
-            local pos, visible = camera:WorldToViewportPoint(p.Character.HumanoidRootPart.Position)
-            if visible then
-                local dist = (Vector2.new(pos.X, pos.Y) - Vector2.new(camera.ViewportSize.X/2, camera.ViewportSize.Y/2)).Magnitude
+        if p ~= localPlayer and isEnemy(p) then
+            local pos, onScreen = camera:WorldToViewportPoint(p.Character.HumanoidRootPart.Position)
+            if onScreen then
+                local dist = calculateDistanceFromCenter(pos.X, pos.Y)
                 if dist < minDist then
                     minDist = dist
                     closest = p
@@ -103,22 +105,22 @@ local function getClosestEnemy()
     return closest
 end
 
--- Mira direto no inimigo
+-- Função para mirar no inimigo
 local function aimAt(player)
     local root = player.Character:FindFirstChild("HumanoidRootPart")
     if not root then return end
-    camera.CFrame = CFrame.new(camera.CFrame.Position, root.Position)
+    local direction = (root.Position - camera.CFrame.Position).unit
+    camera.CFrame = CFrame.new(camera.CFrame.Position, root.Position) * CFrame.new(direction * smoothing)
 end
 
--- Loop principal
-game:GetService("RunService").RenderStepped:Connect(function()
-    -- Atualiza ESP
-    for p, box in pairs(espBoxes) do
-        if p.Character and p.Character:FindFirstChild("HumanoidRootPart") and p.Team ~= localPlayer.Team and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
-            local root = p.Character.HumanoidRootPart
-            local head = p.Character:FindFirstChild("Head")
-            if root and head then
-                local top, onTop = camera:WorldToViewportPoint(head.Position)
+-- Atualiza o ESP na tela
+local function updateESP()
+    for _, p in ipairs(players:GetPlayers()) do
+        if p ~= localPlayer and isEnemy(p) then
+            local box = createESP(p)
+            local root = p.Character:FindFirstChild("HumanoidRootPart")
+            if root then
+                local top, onTop = camera:WorldToViewportPoint(root.Position)
                 local bottom, onBottom = camera:WorldToViewportPoint(root.Position)
                 if onTop and onBottom then
                     local height = math.abs(top.Y - bottom.Y)
@@ -132,10 +134,14 @@ game:GetService("RunService").RenderStepped:Connect(function()
             else
                 box.Visible = false
             end
-        else
-            box.Visible = false
         end
     end
+end
+
+-- Lógica principal do Aimbot + ESP
+runService.RenderStepped:Connect(function()
+    -- Atualiza o ESP constantemente
+    updateESP()
 
     -- Aimbot
     if aimEnabled then
