@@ -1,38 +1,56 @@
 -- Configurações
-local aimKey = "mouse1" -- Botão para ativar o aim assist
-local aimFOV = 100       -- Campo de visão para ativar o aim assist
-local smoothing = 0.2    -- Suavização do movimento
-local localPlayer = nil  -- Referência ao jogador local
+local aimFOV = 100
+local smoothing = 0.2
+local aimEnabled = false
 
--- Função para desenhar a interface
-function drawInterface()
-    draw.text(10, 10, "Aim Assist: Ativado", color.green)
-    draw.text(10, 30, "Tecla: " .. aimKey, color.white)
-    draw.text(10, 50, "FOV: " .. tostring(aimFOV), color.white)
-end
+-- Criação da Interface
+local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
+local Frame = Instance.new("Frame", ScreenGui)
+local ToggleButton = Instance.new("TextButton", Frame)
+local Title = Instance.new("TextLabel", Frame)
 
--- Checa se o jogador é inimigo
-function isEnemy(player)
-    return player.team ~= localPlayer.team and player.health > 0
-end
+-- Estilo da Interface
+Frame.Size = UDim2.new(0, 200, 0, 120)
+Frame.Position = UDim2.new(0, 20, 0, 100)
+Frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+Frame.BorderSizePixel = 0
 
--- Calcula distância em tela entre jogador local e alvo
-function screenDistance(x1, y1, x2, y2)
-    return math.sqrt((x2 - x1)^2 + (y2 - y1)^2)
-end
+Title.Size = UDim2.new(1, 0, 0, 30)
+Title.Text = "Aim Assist GUI"
+Title.TextColor3 = Color3.new(1, 1, 1)
+Title.BackgroundTransparency = 1
+Title.Font = Enum.Font.SourceSans
+Title.TextSize = 20
 
--- Retorna o inimigo mais próximo do centro da tela dentro do FOV
-function getClosestEnemy()
+ToggleButton.Size = UDim2.new(0, 180, 0, 40)
+ToggleButton.Position = UDim2.new(0, 10, 0, 40)
+ToggleButton.Text = "Ativar Aim Assist"
+ToggleButton.TextColor3 = Color3.new(1, 1, 1)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+ToggleButton.BorderSizePixel = 0
+ToggleButton.Font = Enum.Font.SourceSans
+ToggleButton.TextSize = 18
+
+-- Alternar aim assist
+ToggleButton.MouseButton1Click:Connect(function()
+    aimEnabled = not aimEnabled
+    ToggleButton.Text = aimEnabled and "Desativar Aim Assist" or "Ativar Aim Assist"
+    ToggleButton.BackgroundColor3 = aimEnabled and Color3.fromRGB(0, 170, 0) or Color3.fromRGB(60, 60, 60)
+end)
+
+-- Função para buscar inimigo mais próximo
+local function getClosestEnemy()
+    local players = game:GetService("Players")
+    local localPlayer = players.LocalPlayer
+    local camera = workspace.CurrentCamera
     local closest = nil
     local minDist = aimFOV
-    local screenW, screenH = draw.getScreenSize()
-    local screenX, screenY = screenW / 2, screenH / 2
 
-    for _, player in pairs(game.getPlayers()) do
-        if player ~= localPlayer and isEnemy(player) then
-            local x, y = worldToScreen(player.position)
-            if x and y then
-                local dist = screenDistance(screenX, screenY, x, y)
+    for _, player in pairs(players:GetPlayers()) do
+        if player ~= localPlayer and player.Team ~= localPlayer.Team and player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0 then
+            local pos, visible = camera:WorldToViewportPoint(player.Character.HumanoidRootPart.Position)
+            if visible then
+                local dist = (Vector2.new(pos.X, pos.Y) - Vector2.new(camera.ViewportSize.X/2, camera.ViewportSize.Y/2)).Magnitude
                 if dist < minDist then
                     minDist = dist
                     closest = player
@@ -43,26 +61,26 @@ function getClosestEnemy()
     return closest
 end
 
--- Função principal do Aim Assist
-function aimAtTarget()
-    if not input.isKeyDown(aimKey) then return end
+-- Mira no inimigo suavemente
+local function aimAt(target)
+    local camera = workspace.CurrentCamera
+    local root = target.Character:FindFirstChild("HumanoidRootPart")
+    if not root then return end
 
-    local target = getClosestEnemy()
-    if target then
-        local targetX, targetY = worldToScreen(target.position)
-        local screenW, screenH = draw.getScreenSize()
-        local deltaX = (targetX - screenW / 2) * smoothing
-        local deltaY = (targetY - screenH / 2) * smoothing
-        input.moveMouse(deltaX, deltaY)
+    local pos, visible = camera:WorldToViewportPoint(root.Position)
+    if visible then
+        local mouse = game:GetService("UserInputService"):GetMouseLocation()
+        local delta = (Vector2.new(pos.X, pos.Y) - mouse) * smoothing
+        mousemoverel(delta.X, delta.Y)
     end
 end
 
--- Inicialização
-client.registerCallback("onCreateMove", function(cmd)
-    if not localPlayer then
-        localPlayer = game.getLocalPlayer()
+-- Loop principal
+game:GetService("RunService").RenderStepped:Connect(function()
+    if aimEnabled then
+        local target = getClosestEnemy()
+        if target then
+            aimAt(target)
+        end
     end
-    aimAtTarget()
 end)
-
-client.registerCallback("onDraw", drawInterface)
