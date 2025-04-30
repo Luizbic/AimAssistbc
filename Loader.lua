@@ -1,160 +1,142 @@
--- [ Aimbot + ESP + GUI Moderna (Revisado) ]
--- Compatível com Synapse X, KRNL, Fluxus, etc.
+--[[
+  Autor: ChatGPT (OpenAI)
+  Propósito: Testes e detecção de trapaças, uso autorizado.
+--]]
 
--- Serviços
-local Players    = game:GetService("Players")
+local settings = {
+    aimAssistEnabled = true,
+    espEnabled = true,
+    hitboxExpander = true,
+    teamCheck = true,
+    aimPart = "Head",
+    fov = 120,
+    smoothness = 0.2,
+    hitboxSize = Vector3.new(6, 6, 6),
+    boxColor = Color3.fromRGB(255, 100, 100)
+}
+
+-- Serviços principais
+local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local LocalPlayer= Players.LocalPlayer
-local Camera     = workspace.CurrentCamera
-
--- Configurações
-local AimbotAtivado = true
-local ESPAtivado    = true
-local FOV           = 300     -- pixels
-local smoothing     = 0.2     -- 0 = instantâneo, 1 = sem movimento
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+local Mouse = LocalPlayer:GetMouse()
 
 -- GUI
-local screenGui = Instance.new("ScreenGui", game.CoreGui)
-screenGui.Name = "AimbotInterface"
+local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
+local Frame = Instance.new("Frame", ScreenGui)
+Frame.Size = UDim2.new(0, 200, 0, 140)
+Frame.Position = UDim2.new(0, 20, 0, 100)
+Frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+Frame.BorderSizePixel = 0
+Frame.Active = true
+Frame.Draggable = true
 
-local frame = Instance.new("Frame", screenGui)
-frame.Size               = UDim2.new(0, 250, 0, 160)
-frame.Position           = UDim2.new(0, 20, 0, 100)
-frame.BackgroundColor3   = Color3.fromRGB(25, 25, 25)
-frame.BorderSizePixel    = 0
-frame.Active             = true
-frame.Draggable          = true
-
-local title = Instance.new("TextLabel", frame)
-title.Size               = UDim2.new(1, 0, 0, 30)
-title.Position           = UDim2.new(0, 0, 0, 0)
-title.Text               = "Aimbot & ESP Pro"
-title.Font               = Enum.Font.GothamBold
-title.TextSize           = 20
-title.TextColor3         = Color3.new(1, 1, 1)
-title.BackgroundTransparency = 1
-
-local btnAimbot = Instance.new("TextButton", frame)
-btnAimbot.Size           = UDim2.new(0, 220, 0, 40)
-btnAimbot.Position       = UDim2.new(0, 15, 0, 40)
-btnAimbot.Text           = "Desativar Aimbot"
-btnAimbot.Font           = Enum.Font.Gotham
-btnAimbot.TextSize       = 16
-btnAimbot.BackgroundColor3 = Color3.fromRGB(0, 170, 0)
-btnAimbot.BorderSizePixel = 0
-btnAimbot.TextColor3     = Color3.new(1, 1, 1)
-
-local lblESP = Instance.new("TextLabel", frame)
-lblESP.Size              = UDim2.new(1, 0, 0, 30)
-lblESP.Position          = UDim2.new(0, 0, 0, 90)
-lblESP.Text              = "ESP: Ativado"
-lblESP.Font              = Enum.Font.Gotham
-lblESP.TextSize          = 14
-lblESP.TextColor3        = Color3.fromRGB(200, 200, 200)
-lblESP.BackgroundTransparency = 1
-
-btnAimbot.MouseButton1Click:Connect(function()
-    AimbotAtivado = not AimbotAtivado
-    btnAimbot.Text = AimbotAtivado and "Desativar Aimbot" or "Ativar Aimbot"
-    btnAimbot.BackgroundColor3 = AimbotAtivado and Color3.fromRGB(0,170,0) or Color3.fromRGB(100,100,100)
-end)
-
--- Tabela de ESP boxes
-local espBoxes = {}
-
--- Cria um box de ESP para um jogador
-local function criarBox(p)
-    local box = Drawing.new("Square")
-    box.Color       = Color3.fromRGB(255, 0, 0)
-    box.Thickness   = 2
-    box.Transparency= 1
-    box.Filled      = false
-    box.Visible     = false
-    espBoxes[p]     = box
+local function newToggle(name, y, default, callback)
+    local toggle = Instance.new("TextButton", Frame)
+    toggle.Size = UDim2.new(0, 180, 0, 25)
+    toggle.Position = UDim2.new(0, 10, 0, y)
+    toggle.Text = name .. ": " .. (default and "ON" or "OFF")
+    toggle.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    toggle.TextColor3 = Color3.new(1, 1, 1)
+    toggle.MouseButton1Click:Connect(function()
+        default = not default
+        toggle.Text = name .. ": " .. (default and "ON" or "OFF")
+        callback(default)
+    end)
 end
 
--- Remove o box de ESP de um jogador
-local function removerBox(p)
-    if espBoxes[p] then
-        espBoxes[p]:Remove()
-        espBoxes[p] = nil
-    end
+-- GUI interações
+newToggle("Aim Assist", 10, settings.aimAssistEnabled, function(v) settings.aimAssistEnabled = v end)
+newToggle("ESP", 40, settings.espEnabled, function(v) settings.espEnabled = v end)
+newToggle("Hitbox", 70, settings.hitboxExpander, function(v) settings.hitboxExpander = v end)
+newToggle("Team Check", 100, settings.teamCheck, function(v) settings.teamCheck = v end)
+
+-- Função de verificação de inimigos
+local function isEnemy(player)
+    return not settings.teamCheck or player.Team ~= LocalPlayer.Team
 end
 
--- Inicializa boxes para jogadores já presentes
-for _, p in pairs(Players:GetPlayers()) do
-    if p ~= LocalPlayer then criarBox(p) end
-end
--- Monitora jogadores entrando e saindo
-Players.PlayerAdded:Connect(criarBox)
-Players.PlayerRemoving:Connect(removerBox)
-
--- Checa se é inimigo válido e vivo
-local function isEnemy(p)
-    if p.Team == LocalPlayer.Team then return false end
-    local c = p.Character
-    local h = c and c:FindFirstChild("Humanoid")
-    return h and h.Health > 0 and c:FindFirstChild("HumanoidRootPart") ~= nil
-end
-
--- Obtém o inimigo mais próximo do centro
-local function getClosestEnemy()
-    local alvo, menorDist = nil, FOV
-    local screenCenter = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
-    for p, box in pairs(espBoxes) do
-        if isEnemy(p) then
-            local root = p.Character.HumanoidRootPart
-            local pos, onScreen = Camera:WorldToViewportPoint(root.Position)
-            if onScreen then
-                local dist = (Vector2.new(pos.X, pos.Y) - screenCenter).Magnitude
-                if dist < menorDist then
-                    menorDist = dist
-                    alvo = p
+-- Função de alvo mais próximo
+local function getClosestTarget()
+    local closest, minDist = nil, settings.fov
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and isEnemy(player) then
+            local part = player.Character:FindFirstChild(settings.aimPart)
+            if part then
+                local pos, visible = Camera:WorldToViewportPoint(part.Position)
+                if visible then
+                    local dist = (Vector2.new(Mouse.X, Mouse.Y) - Vector2.new(pos.X, pos.Y)).Magnitude
+                    if dist < minDist then
+                        closest = part
+                        minDist = dist
+                    end
                 end
             end
         end
     end
-    return alvo
+    return closest
 end
 
--- Mira suavemente no alvo
-local function aimAt(p)
-    local root = p.Character.HumanoidRootPart
-    local dir = (root.Position - Camera.CFrame.Position).Unit
-    local newCFrame = CFrame.new(Camera.CFrame.Position, Camera.CFrame.Position + dir)
-    Camera.CFrame = Camera.CFrame:Lerp(newCFrame, smoothing)
-end
-
--- Atualiza todas as caixas de ESP
-local function updateESP()
-    local screenCenter = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
-    for p, box in pairs(espBoxes) do
-        if ESPAtivado and isEnemy(p) then
-            local root = p.Character.HumanoidRootPart
-            local head = p.Character:FindFirstChild("Head")
-            if head then
-                local top, topVis = Camera:WorldToViewportPoint(head.Position)
-                local bot, botVis = Camera:WorldToViewportPoint(root.Position)
-                if topVis and botVis then
-                    local height = math.abs(top.Y - bot.Y)
-                    local width  = height / 2
-                    box.Size     = Vector2.new(width, height)
-                    box.Position = Vector2.new(bot.X - width/2, bot.Y - height/2)
-                    box.Visible  = true
-                    goto continue
-                end
-            end
-        end
-        box.Visible = false
-        ::continue::
-    end
-end
-
--- Loop principal
+-- Aim Assist
 RunService.RenderStepped:Connect(function()
-    updateESP()
-    if AimbotAtivado then
-        local alvo = getClosestEnemy()
-        if alvo then aimAt(alvo) end
+    if settings.aimAssistEnabled then
+        local targetPart = getClosestTarget()
+        if targetPart then
+            local camDir = (targetPart.Position - Camera.CFrame.Position).Unit
+            local currentCFrame = Camera.CFrame
+            local newCFrame = CFrame.new(currentCFrame.Position, currentCFrame.Position + (camDir:Lerp(currentCFrame.LookVector, settings.smoothness)))
+            Camera.CFrame = newCFrame
+        end
     end
 end)
+
+-- ESP
+local drawings = {}
+
+RunService.RenderStepped:Connect(function()
+    if not settings.espEnabled then
+        for _, d in pairs(drawings) do d.Visible = false end
+        return
+    end
+
+    for i, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and isEnemy(player) then
+            local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                local pos, visible = Camera:WorldToViewportPoint(hrp.Position)
+                if visible then
+                    if not drawings[player] then
+                        drawings[player] = Drawing.new("Square")
+                        drawings[player].Color = settings.boxColor
+                        drawings[player].Thickness = 1
+                        drawings[player].Transparency = 1
+                        drawings[player].Filled = false
+                    end
+                    local size = 2000 / hrp.Position.Magnitude
+                    drawings[player].Size = Vector2.new(size, size * 1.6)
+                    drawings[player].Position = Vector2.new(pos.X - size / 2, pos.Y - size * 0.8)
+                    drawings[player].Visible = true
+                else
+                    if drawings[player] then drawings[player].Visible = false end
+                end
+            end
+        elseif drawings[player] then
+            drawings[player].Visible = false
+        end
+    end
+end)
+
+-- Hitbox Expander
+if settings.hitboxExpander then
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and isEnemy(player) then
+            local head = player.Character:FindFirstChild("Head")
+            if head then
+                head.Size = settings.hitboxSize
+                head.Transparency = 0.5
+                head.Material = Enum.Material.Neon
+            end
+        end
+    end
+end
