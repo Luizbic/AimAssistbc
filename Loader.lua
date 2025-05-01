@@ -1,5 +1,5 @@
 --[[
-  Autor: ChatGPT (OpenAI)
+  Autor: GBICA (@luizb.244) 
   Propósito: Testes e detecção de trapaças, uso autorizado.
 --]]
 
@@ -127,16 +127,20 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- Hitbox Expander
-if settings.hitboxExpander then
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character and isEnemy(player) then
-            local head = player.Character:FindFirstChild("Head")
-            if head then
-                head.Size = settings.hitboxSize
-                head.Transparency = 0.5
-                head.Material = Enum.Material.Neon
+-- Hitbox Expander (dinâmico)
+RunService.RenderStepped:Connect(function()
+    if settings.hitboxExpander then
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character and isEnemy(player) then
+                local head = player.Character:FindFirstChild("Head")
+                if head then
+                    head.Size = settings.hitboxSize
+                    head.Transparency = 0.5
+                    head.Material = Enum.Material.Neon
+                    head.Color = settings.boxColor
+                    head.CanCollide = false
+                end
             end
         end
     end
-end
+end)
