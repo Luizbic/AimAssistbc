@@ -1,4 +1,4 @@
---[[
+--[[ 
   Autor: GBICA (@luizb.244) 
   Propósito: Testes e detecção de trapaças, uso autorizado.
 --]]
@@ -8,6 +8,7 @@ local settings = {
     espEnabled = true,
     hitboxExpander = true,
     teamCheck = true,
+    fpsBooster = false,
     aimPart = "Head",
     fov = 120,
     smoothness = 0.2,
@@ -25,7 +26,7 @@ local Mouse = LocalPlayer:GetMouse()
 -- GUI
 local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
 local Frame = Instance.new("Frame", ScreenGui)
-Frame.Size = UDim2.new(0, 200, 0, 140)
+Frame.Size = UDim2.new(0, 200, 0, 170)
 Frame.Position = UDim2.new(0, 20, 0, 100)
 Frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 Frame.BorderSizePixel = 0
@@ -51,6 +52,7 @@ newToggle("Aim Assist", 10, settings.aimAssistEnabled, function(v) settings.aimA
 newToggle("ESP", 40, settings.espEnabled, function(v) settings.espEnabled = v end)
 newToggle("Hitbox", 70, settings.hitboxExpander, function(v) settings.hitboxExpander = v end)
 newToggle("Team Check", 100, settings.teamCheck, function(v) settings.teamCheck = v end)
+newToggle("FPS Booster", 130, settings.fpsBooster, function(v) settings.fpsBooster = v end)
 
 -- Função de verificação de inimigos
 local function isEnemy(player)
@@ -142,5 +144,70 @@ RunService.RenderStepped:Connect(function()
                 end
             end
         end
+    end
+end)
+
+-- FPS Booster
+local function optimizeEnvironment()
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") then
+            obj.Enabled = false
+        elseif obj:IsA("Decal") then
+            obj.Transparency = 1
+        elseif obj:IsA("BasePart") then
+            obj.CastShadow = false
+            obj.Material = Enum.Material.SmoothPlastic
+            obj.Reflectance = 0
+        end
+    end
+end
+
+RunService.RenderStepped:Connect(function()
+    if settings.fpsBooster then
+        settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+        local Lighting = game:GetService("Lighting")
+        Lighting.GlobalShadows = false
+        Lighting.FogEnd = math.huge
+        Lighting.Brightness = 0
+        optimizeEnvironment()
+    end
+end)
+
+-- Função para otimizar rede (reduzir tráfego)
+local function optimizeNetwork()
+    local Lighting = game:GetService("Lighting")
+    local Players = game:GetService("Players")
+
+    -- Desabilitar efeitos pesados que podem consumir recursos de rede
+    Lighting.GlobalShadows = false
+    Lighting.FogEnd = math.huge
+    Lighting.Brightness = 0
+
+    -- Desabilitar efeitos desnecessários no jogo
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") then
+            obj.Enabled = false  -- Desativa efeitos pesados
+        elseif obj:IsA("Sound") then
+            obj:Stop()  -- Parar sons que podem estar carregando e consumindo largura de banda
+        end
+    end
+
+    -- Otimizar atualização de rede para diminuir a latência
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player.Character then
+            -- Minimiza a quantidade de dados atualizados por jogador
+            local humanoidRootPart = player.Character:FindFirstChild("HumanoidRootPart")
+            if humanoidRootPart then
+                -- Atualizações menos frequentes no movimento de personagens
+                humanoidRootPart.CFrame = humanoidRootPart.CFrame
+            end
+        end
+    end
+end
+
+-- A cada quadro, otimiza o ambiente e tenta melhorar a performance de rede
+RunService.RenderStepped:Connect(function()
+    if settings.fpsBooster then
+        optimizeNetwork()
     end
 end)
