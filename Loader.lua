@@ -1,42 +1,42 @@
 --[[
-    AUTOR: Adaptado por GBICA (@luizb.244) – Versão Mobile
-    OBJETIVO: Testar trapaças em ambiente controlado, com foco em dispositivos móveis.
-    ATENÇÃO: Use APENAS em seus próprios jogos para estudo de segurança.
+    AUTOR: GBICA (@luizb.244)
+    VERSÃO: 3.0 - Mobile/PC Universal
+    FUNCIONALIDADES: Aimbot, ESP, Hitbox Expander, FOV Circle, Predição
+    INSTRUÇÕES: Copie e cole no executor. Use APENAS para testes em seus próprios jogos.
 --]]
 
 -- ============================================================
--- 1. CONFIGURAÇÕES (AJUSTÁVEIS PELA GUI)
+-- 1. CONFIGURAÇÕES
 -- ============================================================
 local Settings = {
     -- Aimbot
     AimAssist = true,
-    AutoAim = false,          -- Se true, mira automaticamente no alvo mais próximo (sem precisar tocar)
-    SilentAim = false,        -- Se true, não mexe na câmera, apenas redireciona o tiro (experimental)
+    AutoAim = false,          -- Mira automática sem precisar clicar
+    SilentAim = false,        -- Não mexe na câmera (apenas redireciona)
     AimPart = "Head",
-    FOV = 150,                -- Raio do círculo de mira (em pixels)
-    Smoothness = 0.3,         -- Suavidade (0 = instantâneo, 1 = muito lento)
+    FOV = 150,
+    Smoothness = 0.25,
     Prediction = true,
     PredictionMultiplier = 1.0,
-    MaxDistance = 400,
+    MaxDistance = 500,
 
     -- ESP
     ESP = true,
     ESPColor = Color3.fromRGB(255, 100, 100),
-    ESPThickness = 2,
+    ESPThickness = 1.5,
     ESPShowHealth = true,
     ESPShowName = true,
-    ESPShowDistance = false,  -- Mostra a distância do alvo
+    ESPShowDistance = false,
 
-    -- Hitbox (visual)
+    -- Hitbox
     HitboxExpand = true,
-    HitboxSize = Vector3.new(8, 8, 8), -- maior para celular (mais fácil de ver)
+    HitboxSize = Vector3.new(8, 8, 8),
     HitboxTransparency = 0.3,
     HitboxColor = Color3.fromRGB(255, 100, 100),
 
     -- Outros
     TeamCheck = true,
-    FPSBoost = false,
-    ShowFOVCircle = true,     -- Desenha um círculo na tela mostrando o FOV
+    ShowFOVCircle = true,
 }
 
 -- ============================================================
@@ -44,18 +44,15 @@ local Settings = {
 -- ============================================================
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local Lighting = game:GetService("Lighting")
 local Workspace = game:GetService("Workspace")
 local UserInputService = game:GetService("UserInputService")
-local GuiService = game:GetService("GuiService") -- para detectar toque
+local Lighting = game:GetService("Lighting")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
+local Mouse = LocalPlayer:GetMouse()
 
--- Para dispositivos móveis, usamos o toque (Touch) em vez do mouse
-local TouchEnabled = UserInputService.TouchEnabled
-
--- Cache de jogadores
+-- Cache de jogadores ativos
 local ActivePlayers = {}
 local function updateActivePlayers()
     ActivePlayers = {}
@@ -83,28 +80,27 @@ local function isEnemy(p)
     return true
 end
 
--- Predição iterativa (mais precisa)
+-- Predição de movimento (iterativa)
 local function predictPosition(part, bulletSpeed)
     bulletSpeed = bulletSpeed or 3000
     local pos = part.Position
     local vel = part.Velocity
-    -- 3 iterações para convergência
     for _ = 1, 3 do
         local dist = (Camera.CFrame.Position - pos).Magnitude
         local travelTime = dist / bulletSpeed
-        pos = part.Position + vel * travelTime
+        pos = part.Position + vel * travelTime * Settings.PredictionMultiplier
     end
     return pos
 end
 
--- Verifica se ponto está dentro do FOV (círculo)
-local function isInFOV(screenPos, centerX, centerY)
-    local dx = screenPos.X - centerX
-    local dy = screenPos.Y - centerY
+-- Verifica se ponto está dentro do FOV
+local function isInFOV(screenPos)
+    local dx = screenPos.X - Mouse.X
+    local dy = screenPos.Y - Mouse.Y
     return (dx*dx + dy*dy) <= (Settings.FOV * Settings.FOV)
 end
 
--- Raycast com filtro correto
+-- Raycast para linha de visão
 local function hasLineOfSight(from, to, targetChar)
     local params = RaycastParams.new()
     params.FilterType = Enum.RaycastFilterType.Blacklist
@@ -117,14 +113,8 @@ local function hasLineOfSight(from, to, targetChar)
     return result == nil
 end
 
--- Obtém a posição do centro da tela (para FOV)
-local function getScreenCenter()
-    local viewport = Camera.ViewportSize
-    return viewport.X / 2, viewport.Y / 2
-end
-
 -- ============================================================
--- 4. SISTEMA DE MIRA (AIMBOT) – OTIMIZADO PARA CELULAR
+-- 4. AIMBOT
 -- ============================================================
 local CurrentTarget = nil
 local TargetPosition = nil
@@ -133,7 +123,6 @@ local function getBestTarget()
     local bestScore = math.huge
     local bestTarget = nil
     local bestPos = nil
-    local centerX, centerY = getScreenCenter()
 
     for _, p in ipairs(ActivePlayers) do
         if p.Character and p.Character:FindFirstChild("Humanoid") and isEnemy(p) then
@@ -148,12 +137,11 @@ local function getBestTarget()
                     local dist = (Camera.CFrame.Position - pos).Magnitude
                     if dist > Settings.MaxDistance then continue end
 
-                    if isInFOV(Vector2.new(screenPos.X, screenPos.Y), centerX, centerY) then
+                    if isInFOV(Vector2.new(screenPos.X, screenPos.Y)) then
                         if hasLineOfSight(Camera.CFrame.Position, pos, p.Character) then
-                            local dx = screenPos.X - centerX
-                            local dy = screenPos.Y - centerY
+                            local dx = screenPos.X - Mouse.X
+                            local dy = screenPos.Y - Mouse.Y
                             local angularDist = math.sqrt(dx*dx + dy*dy)
-                            -- Score: prioriza menor distância angular, depois menor distância
                             local score = angularDist + dist * 0.001
                             if score < bestScore then
                                 bestScore = score
@@ -178,15 +166,8 @@ local function smoothAim(targetPos)
     Camera.CFrame = CFrame.new(currentCF.Position, currentCF.Position + newLook)
 end
 
--- Mira instantânea (usada quando smoothness = 0)
-local function instantAim(targetPos)
-    if targetPos then
-        Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetPos)
-    end
-end
-
 -- ============================================================
--- 5. ESP (WALLHACK) – COM SUPORTE A CELULAR (DESENHO NA TELA)
+-- 5. ESP (USANDO DRAWING)
 -- ============================================================
 local espObjects = {}
 
@@ -200,32 +181,31 @@ local function createESP(player)
 
     local nameText = Drawing.new("Text")
     nameText.Color = Color3.new(1,1,1)
-    nameText.Size = 16
+    nameText.Size = 14
     nameText.Center = true
     nameText.Outline = true
     nameText.OutlineColor = Color3.new(0,0,0)
     nameText.Visible = false
-    nameText.Font = Enum.Font.SourceSansBold
+    nameText.Font = 3  -- Enum.Font.SourceSansBold
 
     local healthBar = Drawing.new("Line")
     healthBar.Color = Color3.fromRGB(0, 255, 0)
-    healthBar.Thickness = 4
+    healthBar.Thickness = 3
     healthBar.Visible = false
 
     local distText = Drawing.new("Text")
-    distText.Color = Color3.fromRGB(255,255,255)
-    distText.Size = 14
+    distText.Color = Color3.new(1,1,1)
+    distText.Size = 12
     distText.Center = true
     distText.Outline = true
     distText.OutlineColor = Color3.new(0,0,0)
     distText.Visible = false
-    distText.Font = Enum.Font.SourceSans
+    distText.Font = 2  -- Enum.Font.SourceSans
 
     return { Box = box, Name = nameText, Health = healthBar, Distance = distText }
 end
 
 local function updateESP()
-    local centerX, centerY = getScreenCenter()
     for _, p in ipairs(ActivePlayers) do
         local char = p.Character
         local root = char and char:FindFirstChild("HumanoidRootPart")
@@ -237,7 +217,7 @@ local function updateESP()
                 end
                 local esp = espObjects[p]
                 local dist = (Camera.CFrame.Position - root.Position).Magnitude
-                local size = math.clamp(2500 / dist, 25, 250)
+                local size = math.clamp(2000 / dist, 20, 200)
                 local x = screenPos.X - size/2
                 local y = screenPos.Y - size * 0.8
 
@@ -260,7 +240,7 @@ local function updateESP()
                         local hp = humanoid.Health / humanoid.MaxHealth
                         local barWidth = size
                         local barX = screenPos.X - barWidth/2
-                        local barY = y + size * 1.6 + 6
+                        local barY = y + size * 1.6 + 5
                         esp.Health.From = Vector2.new(barX, barY)
                         esp.Health.To = Vector2.new(barX + barWidth * hp, barY)
                         esp.Health.Color = Color3.fromRGB(255 * (1 - hp), 255 * hp, 0)
@@ -300,7 +280,7 @@ local function updateESP()
 end
 
 -- ============================================================
--- 6. FOV CIRCLE (DESENHA O CAMPO DE VISÃO)
+-- 6. FOV CIRCLE (DRAWING)
 -- ============================================================
 local fovCircle = nil
 local function drawFOVCircle()
@@ -316,16 +296,16 @@ local function drawFOVCircle()
         fovCircle.NumSides = 32
         fovCircle.Transparency = 0.6
     end
-    local cx, cy = getScreenCenter()
-    fovCircle.Position = Vector2.new(cx, cy)
+    fovCircle.Position = Vector2.new(Mouse.X, Mouse.Y)
     fovCircle.Radius = Settings.FOV
     fovCircle.Visible = true
 end
 
 -- ============================================================
--- 7. HITBOX EXPANDER (VISUAL)
+-- 7. HITBOX EXPANDER
 -- ============================================================
 local function expandHitboxes()
+    if not Settings.HitboxExpand then return end
     for _, p in ipairs(ActivePlayers) do
         local char = p.Character
         if char and isEnemy(p) then
@@ -342,288 +322,311 @@ local function expandHitboxes()
 end
 
 -- ============================================================
--- 8. FPS BOOST (OTIMIZAÇÃO)
+-- 8. GUI (MENU FLUTUANTE COM DRAWING)
 -- ============================================================
-local boosted = false
-local function applyFPSBoost()
-    if boosted then return end
-    boosted = true
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") then
-            obj.Enabled = false
-        elseif obj:IsA("Decal") then
-            obj.Transparency = 1
-        elseif obj:IsA("BasePart") then
-            obj.CastShadow = false
-            obj.Material = Enum.Material.SmoothPlastic
-            obj.Reflectance = 0
-        end
-    end
-    Lighting.GlobalShadows = false
-    Lighting.FogEnd = 1e10
-    Lighting.Brightness = 0
-    pcall(function()
-        settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
-    end)
-end
+local menuVisible = true
+local menuObjects = {}
 
--- ============================================================
--- 9. GUI PARA CELULAR (TOUCH-FRIENDLY)
--- ============================================================
-local function createMobileGUI()
-    local ScreenGui = Instance.new("ScreenGui")
-    ScreenGui.Name = "GBICA_MobileGUI"
-    ScreenGui.Parent = game.CoreGui
-    ScreenGui.ResetOnSpawn = false
+local function createMenu()
+    -- Fundo do menu
+    local bg = Drawing.new("Square")
+    bg.Position = Vector2.new(20, 50)
+    bg.Size = Vector2.new(220, 350)
+    bg.Color = Color3.fromRGB(20, 20, 30)
+    bg.Thickness = 1
+    bg.Filled = true
+    bg.Transparency = 0.9
+    bg.Visible = true
 
-    -- Frame principal (maior para dedos)
-    local MainFrame = Instance.new("Frame")
-    MainFrame.Size = UDim2.new(0, 280, 0, 450) -- mais alto para scroll
-    MainFrame.Position = UDim2.new(0, 10, 0, 50)
-    MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
-    MainFrame.BorderSizePixel = 0
-    MainFrame.Active = true
-    MainFrame.Draggable = true
-    MainFrame.Parent = ScreenGui
-
-    local UICorner = Instance.new("UICorner")
-    UICorner.CornerRadius = UDim.new(0, 10)
-    UICorner.Parent = MainFrame
-
-    local UIStroke = Instance.new("UIStroke")
-    UIStroke.Color = Color3.fromRGB(255, 80, 80)
-    UIStroke.Thickness = 2
-    UIStroke.Parent = MainFrame
+    -- Borda
+    local border = Drawing.new("Square")
+    border.Position = Vector2.new(20, 50)
+    border.Size = Vector2.new(220, 350)
+    border.Color = Color3.fromRGB(255, 80, 80)
+    border.Thickness = 2
+    border.Filled = false
+    border.Transparency = 1
+    border.Visible = true
 
     -- Título
-    local Title = Instance.new("TextLabel")
-    Title.Size = UDim2.new(1, 0, 0, 40)
-    Title.Text = "GBICA Mobile"
-    Title.TextColor3 = Color3.new(1,1,1)
-    Title.BackgroundTransparency = 1
-    Title.Font = Enum.Font.SourceSansBold
-    Title.TextSize = 26
-    Title.Parent = MainFrame
+    local title = Drawing.new("Text")
+    title.Position = Vector2.new(130, 65)
+    title.Text = "GBICA v3.0"
+    title.Color = Color3.new(1,1,1)
+    title.Size = 22
+    title.Center = true
+    title.Outline = true
+    title.OutlineColor = Color3.new(0,0,0)
+    title.Font = 3
+    title.Visible = true
 
-    -- Botão fechar (grande)
-    local CloseBtn = Instance.new("TextButton")
-    CloseBtn.Size = UDim2.new(0, 40, 0, 40)
-    CloseBtn.Position = UDim2.new(1, -45, 0, 5)
-    CloseBtn.Text = "✕"
-    CloseBtn.TextColor3 = Color3.fromRGB(255, 80, 80)
-    CloseBtn.BackgroundTransparency = 1
-    CloseBtn.Font = Enum.Font.SourceSans
-    CloseBtn.TextSize = 30
-    CloseBtn.Parent = MainFrame
-    CloseBtn.MouseButton1Click:Connect(function()
-        ScreenGui.Enabled = not ScreenGui.Enabled
-    end)
+    -- Botão Minimizar (simbolo "-")
+    local minBtn = Drawing.new("Text")
+    minBtn.Position = Vector2.new(195, 55)
+    minBtn.Text = "─"
+    minBtn.Color = Color3.new(1,1,1)
+    minBtn.Size = 30
+    minBtn.Center = true
+    minBtn.Font = 3
+    minBtn.Visible = true
 
-    -- ScrollingFrame para caber todas as opções
-    local Scroll = Instance.new("ScrollingFrame")
-    Scroll.Size = UDim2.new(1, 0, 1, -45)
-    Scroll.Position = UDim2.new(0, 0, 0, 45)
-    Scroll.BackgroundTransparency = 1
-    Scroll.BorderSizePixel = 0
-    Scroll.ScrollBarThickness = 6
-    Scroll.ScrollBarImageColor3 = Color3.fromRGB(255,100,100)
-    Scroll.Parent = MainFrame
+    -- Botão Fechar (simbolo "X")
+    local closeBtn = Drawing.new("Text")
+    closeBtn.Position = Vector2.new(220, 55)
+    closeBtn.Text = "✕"
+    closeBtn.Color = Color3.fromRGB(255, 80, 80)
+    closeBtn.Size = 28
+    closeBtn.Center = true
+    closeBtn.Font = 3
+    closeBtn.Visible = true
 
-    local Layout = Instance.new("UIListLayout")
-    Layout.Padding = UDim.new(0, 8)
-    Layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-    Layout.VerticalAlignment = Enum.VerticalAlignment.Top
-    Layout.Parent = Scroll
+    menuObjects = {
+        Background = bg,
+        Border = border,
+        Title = title,
+        MinBtn = minBtn,
+        CloseBtn = closeBtn,
+        Buttons = {}
+    }
 
-    -- Função para criar botões toggle (grandes)
-    local function createToggle(text, default, callback)
-        local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(0.9, 0, 0, 45) -- altura maior para toque
-        btn.Text = text .. ": " .. (default and "✅ ON" or "❌ OFF")
-        btn.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
-        btn.TextColor3 = Color3.new(1,1,1)
-        btn.Font = Enum.Font.SourceSansBold
-        btn.TextSize = 20
-        btn.BorderSizePixel = 0
-        local corner = Instance.new("UICorner")
-        corner.CornerRadius = UDim.new(0, 6)
-        corner.Parent = btn
-        btn.Parent = Scroll
+    -- Função para criar botões de toggle (simulados com texto)
+    local yPos = 100
+    local toggleNames = {
+        "Aim Assist",
+        "Auto Aim",
+        "ESP",
+        "Hitbox",
+        "Team Check",
+        "Prediction",
+        "FOV Circle"
+    }
+    local toggleStates = {
+        Settings.AimAssist,
+        Settings.AutoAim,
+        Settings.ESP,
+        Settings.HitboxExpand,
+        Settings.TeamCheck,
+        Settings.Prediction,
+        Settings.ShowFOVCircle
+    }
+    local toggleCallbacks = {
+        function(v) Settings.AimAssist = v end,
+        function(v) Settings.AutoAim = v end,
+        function(v) Settings.ESP = v end,
+        function(v) Settings.HitboxExpand = v end,
+        function(v) Settings.TeamCheck = v end,
+        function(v) Settings.Prediction = v end,
+        function(v) Settings.ShowFOVCircle = v end
+    }
 
-        local state = default
-        btn.MouseButton1Click:Connect(function()
-            state = not state
-            btn.Text = text .. ": " .. (state and "✅ ON" or "❌ OFF")
-            callback(state)
-        end)
-        return btn
+    for i, name in ipairs(toggleNames) do
+        local btn = Drawing.new("Text")
+        btn.Position = Vector2.new(130, yPos)
+        btn.Text = name .. ": " .. (toggleStates[i] and "ON" or "OFF")
+        btn.Color = toggleStates[i] and Color3.fromRGB(100, 255, 100) or Color3.fromRGB(255, 100, 100)
+        btn.Size = 16
+        btn.Center = true
+        btn.Outline = true
+        btn.OutlineColor = Color3.new(0,0,0)
+        btn.Font = 2
+        btn.Visible = true
+
+        -- Armazena o estado e a função de callback
+        table.insert(menuObjects.Buttons, {
+            Object = btn,
+            State = toggleStates[i],
+            Callback = toggleCallbacks[i],
+            Name = name
+        })
+        yPos = yPos + 30
     end
 
-    -- Toggles
-    createToggle("Aim Assist", Settings.AimAssist, function(v) Settings.AimAssist = v end)
-    createToggle("Auto Aim", Settings.AutoAim, function(v) Settings.AutoAim = v end)
-    createToggle("Silent Aim", Settings.SilentAim, function(v) Settings.SilentAim = v end)
-    createToggle("ESP", Settings.ESP, function(v) Settings.ESP = v end)
-    createToggle("Hitbox Expand", Settings.HitboxExpand, function(v) Settings.HitboxExpand = v end)
-    createToggle("Team Check", Settings.TeamCheck, function(v) Settings.TeamCheck = v end)
-    createToggle("FPS Boost", Settings.FPSBoost, function(v) Settings.FPSBoost = v end)
-    createToggle("Prediction", Settings.Prediction, function(v) Settings.Prediction = v end)
-    createToggle("Show FOV", Settings.ShowFOVCircle, function(v) Settings.ShowFOVCircle = v end)
+    -- Ajustes de FOV e Smoothness (exibidos como texto)
+    local fovText = Drawing.new("Text")
+    fovText.Position = Vector2.new(130, yPos)
+    fovText.Text = "FOV: " .. Settings.FOV
+    fovText.Color = Color3.new(1,1,1)
+    fovText.Size = 16
+    fovText.Center = true
+    fovText.Outline = true
+    fovText.OutlineColor = Color3.new(0,0,0)
+    fovText.Font = 2
+    fovText.Visible = true
+    table.insert(menuObjects.Buttons, {Object = fovText, IsSetting = true, Type = "FOV"})
 
-    -- Ajuste de FOV (com botões + e - grandes)
-    local fovLabel = Instance.new("TextLabel")
-    fovLabel.Size = UDim2.new(0.9, 0, 0, 30)
-    fovLabel.Text = "FOV: " .. Settings.FOV
-    fovLabel.TextColor3 = Color3.new(1,1,1)
-    fovLabel.BackgroundTransparency = 1
-    fovLabel.Font = Enum.Font.SourceSansBold
-    fovLabel.TextSize = 18
-    fovLabel.Parent = Scroll
+    yPos = yPos + 30
 
-    local fovRow = Instance.new("Frame")
-    fovRow.Size = UDim2.new(0.9, 0, 0, 45)
-    fovRow.BackgroundTransparency = 1
-    fovRow.Parent = Scroll
+    local smoothText = Drawing.new("Text")
+    smoothText.Position = Vector2.new(130, yPos)
+    smoothText.Text = "Smooth: " .. string.format("%.2f", Settings.Smoothness)
+    smoothText.Color = Color3.new(1,1,1)
+    smoothText.Size = 16
+    smoothText.Center = true
+    smoothText.Outline = true
+    smoothText.OutlineColor = Color3.new(0,0,0)
+    smoothText.Font = 2
+    smoothText.Visible = true
+    table.insert(menuObjects.Buttons, {Object = smoothText, IsSetting = true, Type = "Smooth"})
 
-    local minusBtn = Instance.new("TextButton")
-    minusBtn.Size = UDim2.new(0.3, 0, 1, 0)
-    minusBtn.Text = "−"
-    minusBtn.BackgroundColor3 = Color3.fromRGB(60,60,70)
-    minusBtn.TextColor3 = Color3.new(1,1,1)
-    minusBtn.Font = Enum.Font.SourceSansBold
-    minusBtn.TextSize = 30
-    minusBtn.Parent = fovRow
-    local cornerM = Instance.new("UICorner")
-    cornerM.CornerRadius = UDim.new(0, 6)
-    cornerM.Parent = minusBtn
+    -- Botões + e - para ajustes
+    local minusFOV = Drawing.new("Text")
+    minusFOV.Position = Vector2.new(50, yPos - 15)
+    minusFOV.Text = "◀"
+    minusFOV.Color = Color3.new(1,1,1)
+    minusFOV.Size = 22
+    minusFOV.Center = true
+    minusFOV.Font = 2
+    minusFOV.Visible = true
+    table.insert(menuObjects.Buttons, {Object = minusFOV, IsControl = true, Type = "FOVMinus"})
 
-    local fovValue = Instance.new("TextLabel")
-    fovValue.Size = UDim2.new(0.4, 0, 1, 0)
-    fovValue.Text = tostring(Settings.FOV)
-    fovValue.BackgroundTransparency = 1
-    fovValue.TextColor3 = Color3.new(1,1,1)
-    fovValue.Font = Enum.Font.SourceSansBold
-    fovValue.TextSize = 24
-    fovValue.Parent = fovRow
+    local plusFOV = Drawing.new("Text")
+    plusFOV.Position = Vector2.new(210, yPos - 15)
+    plusFOV.Text = "▶"
+    plusFOV.Color = Color3.new(1,1,1)
+    plusFOV.Size = 22
+    plusFOV.Center = true
+    plusFOV.Font = 2
+    plusFOV.Visible = true
+    table.insert(menuObjects.Buttons, {Object = plusFOV, IsControl = true, Type = "FOVPlus"})
 
-    local plusBtn = Instance.new("TextButton")
-    plusBtn.Size = UDim2.new(0.3, 0, 1, 0)
-    plusBtn.Text = "+"
-    plusBtn.BackgroundColor3 = Color3.fromRGB(60,60,70)
-    plusBtn.TextColor3 = Color3.new(1,1,1)
-    plusBtn.Font = Enum.Font.SourceSansBold
-    plusBtn.TextSize = 30
-    plusBtn.Parent = fovRow
-    local cornerP = Instance.new("UICorner")
-    cornerP.CornerRadius = UDim.new(0, 6)
-    cornerP.Parent = plusBtn
+    yPos = yPos + 35
 
-    minusBtn.MouseButton1Click:Connect(function()
-        Settings.FOV = math.max(20, Settings.FOV - 10)
-        fovValue.Text = tostring(Settings.FOV)
-        fovLabel.Text = "FOV: " .. Settings.FOV
-    end)
-    plusBtn.MouseButton1Click:Connect(function()
-        Settings.FOV = math.min(400, Settings.FOV + 10)
-        fovValue.Text = tostring(Settings.FOV)
-        fovLabel.Text = "FOV: " .. Settings.FOV
-    end)
+    local minusSmooth = Drawing.new("Text")
+    minusSmooth.Position = Vector2.new(50, yPos - 15)
+    minusSmooth.Text = "◀"
+    minusSmooth.Color = Color3.new(1,1,1)
+    minusSmooth.Size = 22
+    minusSmooth.Center = true
+    minusSmooth.Font = 2
+    minusSmooth.Visible = true
+    table.insert(menuObjects.Buttons, {Object = minusSmooth, IsControl = true, Type = "SmoothMinus"})
 
-    -- Ajuste de Smoothness (slider simples com botões)
-    local smoothLabel = Instance.new("TextLabel")
-    smoothLabel.Size = UDim2.new(0.9, 0, 0, 30)
-    smoothLabel.Text = "Suavidade: " .. string.format("%.2f", Settings.Smoothness)
-    smoothLabel.TextColor3 = Color3.new(1,1,1)
-    smoothLabel.BackgroundTransparency = 1
-    smoothLabel.Font = Enum.Font.SourceSansBold
-    smoothLabel.TextSize = 18
-    smoothLabel.Parent = Scroll
+    local plusSmooth = Drawing.new("Text")
+    plusSmooth.Position = Vector2.new(210, yPos - 15)
+    plusSmooth.Text = "▶"
+    plusSmooth.Color = Color3.new(1,1,1)
+    plusSmooth.Size = 22
+    plusSmooth.Center = true
+    plusSmooth.Font = 2
+    plusSmooth.Visible = true
+    table.insert(menuObjects.Buttons, {Object = plusSmooth, IsControl = true, Type = "SmoothPlus"})
 
-    local smoothRow = Instance.new("Frame")
-    smoothRow.Size = UDim2.new(0.9, 0, 0, 45)
-    smoothRow.BackgroundTransparency = 1
-    smoothRow.Parent = Scroll
+    -- Função para alternar estado dos botões
+    local function toggleButton(index)
+        local data = menuObjects.Buttons[index]
+        if data and not data.IsSetting and not data.IsControl then
+            data.State = not data.State
+            data.Callback(data.State)
+            data.Object.Text = data.Name .. ": " .. (data.State and "ON" or "OFF")
+            data.Object.Color = data.State and Color3.fromRGB(100, 255, 100) or Color3.fromRGB(255, 100, 100)
+        end
+    end
 
-    local smMinus = Instance.new("TextButton")
-    smMinus.Size = UDim2.new(0.3, 0, 1, 0)
-    smMinus.Text = "−"
-    smMinus.BackgroundColor3 = Color3.fromRGB(60,60,70)
-    smMinus.TextColor3 = Color3.new(1,1,1)
-    smMinus.Font = Enum.Font.SourceSansBold
-    smMinus.TextSize = 30
-    smMinus.Parent = smoothRow
-    local cornerS1 = Instance.new("UICorner")
-    cornerS1.CornerRadius = UDim.new(0, 6)
-    cornerS1.Parent = smMinus
+    -- Função para ajustar valores
+    local function adjustValue(type, direction)
+        if type == "FOV" then
+            Settings.FOV = math.clamp(Settings.FOV + direction * 10, 20, 400)
+            for _, data in ipairs(menuObjects.Buttons) do
+                if data.IsSetting and data.Type == "FOV" then
+                    data.Object.Text = "FOV: " .. Settings.FOV
+                end
+            end
+        elseif type == "Smooth" then
+            Settings.Smoothness = math.clamp(Settings.Smoothness + direction * 0.05, 0, 1)
+            Settings.Smoothness = math.round(Settings.Smoothness * 100) / 100
+            for _, data in ipairs(menuObjects.Buttons) do
+                if data.IsSetting and data.Type == "Smooth" then
+                    data.Object.Text = "Smooth: " .. string.format("%.2f", Settings.Smoothness)
+                end
+            end
+        end
+    end
 
-    local smoothVal = Instance.new("TextLabel")
-    smoothVal.Size = UDim2.new(0.4, 0, 1, 0)
-    smoothVal.Text = string.format("%.2f", Settings.Smoothness)
-    smoothVal.BackgroundTransparency = 1
-    smoothVal.TextColor3 = Color3.new(1,1,1)
-    smoothVal.Font = Enum.Font.SourceSansBold
-    smoothVal.TextSize = 24
-    smoothVal.Parent = smoothRow
+    -- Simula clique nos botões (usando o mouse)
+    local function handleClick()
+        local mx, my = Mouse.X, Mouse.Y
+        -- Verifica se clicou no botão de minimizar
+        if mx >= 195 and mx <= 215 and my >= 55 and my <= 75 then
+            menuVisible = not menuVisible
+            for _, obj in pairs(menuObjects) do
+                if type(obj) == "table" then
+                    for _, data in ipairs(obj) do
+                        if type(data) == "table" and data.Object then
+                            data.Object.Visible = menuVisible
+                        end
+                    end
+                elseif type(obj) == "userdata" then
+                    obj.Visible = menuVisible
+                end
+            end
+            return
+        end
+        -- Verifica se clicou no botão de fechar
+        if mx >= 220 and mx <= 240 and my >= 55 and my <= 75 then
+            for _, obj in pairs(menuObjects) do
+                if type(obj) == "table" then
+                    for _, data in ipairs(obj) do
+                        if type(data) == "table" and data.Object then
+                            data.Object:Remove()
+                        end
+                    end
+                elseif type(obj) == "userdata" then
+                    obj:Remove()
+                end
+            end
+            menuObjects = {}
+            return
+        end
 
-    local smPlus = Instance.new("TextButton")
-    smPlus.Size = UDim2.new(0.3, 0, 1, 0)
-    smPlus.Text = "+"
-    smPlus.BackgroundColor3 = Color3.fromRGB(60,60,70)
-    smPlus.TextColor3 = Color3.new(1,1,1)
-    smPlus.Font = Enum.Font.SourceSansBold
-    smPlus.TextSize = 30
-    smPlus.Parent = smoothRow
-    local cornerS2 = Instance.new("UICorner")
-    cornerS2.CornerRadius = UDim.new(0, 6)
-    cornerS2.Parent = smPlus
+        -- Verifica cliques nos botões de toggle
+        local yStart = 100
+        for i, data in ipairs(menuObjects.Buttons) do
+            if not data.IsSetting and not data.IsControl then
+                if mx >= 50 and mx <= 210 and my >= yStart - 10 and my <= yStart + 10 then
+                    toggleButton(i)
+                    return
+                end
+                yStart = yStart + 30
+            elseif data.IsControl then
+                if data.Type == "FOVMinus" and mx >= 40 and mx <= 60 and my >= yStart - 15 and my <= yStart + 15 then
+                    adjustValue("FOV", -1)
+                    return
+                elseif data.Type == "FOVPlus" and mx >= 200 and mx <= 220 and my >= yStart - 15 and my <= yStart + 15 then
+                    adjustValue("FOV", 1)
+                    return
+                elseif data.Type == "SmoothMinus" and mx >= 40 and mx <= 60 and my >= yStart - 15 and my <= yStart + 15 then
+                    adjustValue("Smooth", -1)
+                    return
+                elseif data.Type == "SmoothPlus" and mx >= 200 and mx <= 220 and my >= yStart - 15 and my <= yStart + 15 then
+                    adjustValue("Smooth", 1)
+                    return
+                end
+            end
+        end
+    end
 
-    smMinus.MouseButton1Click:Connect(function()
-        Settings.Smoothness = math.max(0, math.round((Settings.Smoothness - 0.05) * 100) / 100)
-        smoothVal.Text = string.format("%.2f", Settings.Smoothness)
-        smoothLabel.Text = "Suavidade: " .. string.format("%.2f", Settings.Smoothness)
-    end)
-    smPlus.MouseButton1Click:Connect(function()
-        Settings.Smoothness = math.min(1, math.round((Settings.Smoothness + 0.05) * 100) / 100)
-        smoothVal.Text = string.format("%.2f", Settings.Smoothness)
-        smoothLabel.Text = "Suavidade: " .. string.format("%.2f", Settings.Smoothness)
-    end)
+    -- Conecta o clique do mouse
+    Mouse.Button1Down:Connect(handleClick)
 
-    -- Botão para resetar configurações (opcional)
-    local resetBtn = Instance.new("TextButton")
-    resetBtn.Size = UDim2.new(0.9, 0, 0, 45)
-    resetBtn.Text = "🔄 Resetar Configurações"
-    resetBtn.BackgroundColor3 = Color3.fromRGB(80, 40, 40)
-    resetBtn.TextColor3 = Color3.new(1,1,1)
-    resetBtn.Font = Enum.Font.SourceSansBold
-    resetBtn.TextSize = 20
-    resetBtn.Parent = Scroll
-    local cornerR = Instance.new("UICorner")
-    cornerR.CornerRadius = UDim.new(0, 6)
-    cornerR.Parent = resetBtn
-    resetBtn.MouseButton1Click:Connect(function()
-        -- Recarregar o script (reiniciar) – simplesmente recria a GUI e reseta as variáveis?
-        -- Neste exemplo, apenas reiniciamos as configurações para os valores padrão (não implementado para simplicidade)
-        print("Reset não implementado, reinicie o script.")
-    end)
-
-    -- Ajustar altura do Scroll conforme o conteúdo
-    Scroll.CanvasSize = UDim2.new(0, 0, 0, Layout.AbsoluteContentSize.Y + 20)
+    return true
 end
 
-createMobileGUI()
+-- Criar menu (se ainda não existir)
+if not next(menuObjects) then
+    createMenu()
+end
 
 -- ============================================================
--- 10. LOOP PRINCIPAL (RENDER STEP)
+-- 9. LOOP PRINCIPAL (RENDER STEP)
 -- ============================================================
 local function onRender()
-    -- Atualiza o FOV Circle (sempre, independente do aimbot)
+    -- FOV Circle
     drawFOVCircle()
 
-    -- ESP (sempre que ativado)
+    -- ESP
     if Settings.ESP then
         updateESP()
     else
-        -- Limpar ESP se desativado
         for p, esp in pairs(espObjects) do
             esp.Box:Remove()
             esp.Name:Remove()
@@ -634,55 +637,22 @@ local function onRender()
     end
 
     -- Hitbox
-    if Settings.HitboxExpand then
-        expandHitboxes()
-    end
-
-    -- FPS Boost
-    if Settings.FPSBoost then
-        applyFPSBoost()
-    end
+    expandHitboxes()
 
     -- Aimbot
     if Settings.AimAssist then
-        local target, pos = getBestTarget()
-        CurrentTarget = target
-        TargetPosition = pos
-
-        -- Decisão de quando mirar
         local shouldAim = false
         if Settings.AutoAim then
-            shouldAim = true  -- mira automaticamente no melhor alvo
+            shouldAim = true
         else
-            -- Em celular, usamos toque; em PC, botão direito
-            if TouchEnabled then
-                -- Verifica se há pelo menos um toque ativo (qualquer toque na tela)
-                local touches = UserInputService:GetTouchPositions()
-                shouldAim = (#touches > 0)
-            else
-                shouldAim = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
-            end
+            -- Verifica se o botão direito do mouse está pressionado
+            shouldAim = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
         end
 
-        if shouldAim and target and pos then
-            if Settings.SilentAim then
-                -- Silent Aim: redireciona o mouse (ou toque) para o alvo sem mover a câmera
-                -- Em celular, podemos simular um toque na posição do alvo na tela (não é possível diretamente)
-                -- Mas podemos apenas apontar a câmera e, se o jogo usar o mouse para mirar, isso já funciona
-                -- Para testes, vamos apenas mover a câmera mesmo, pois Silent Aim é complexo em mobile
-                -- (Na prática, silent aim requer modificar o evento de tiro, não faremos aqui)
-                -- Vamos apenas mover a câmera levemente para não atrapalhar
-                if Settings.Smoothness > 0 then
-                    smoothAim(pos)
-                else
-                    instantAim(pos)
-                end
-            else
-                if Settings.Smoothness > 0 then
-                    smoothAim(pos)
-                else
-                    instantAim(pos)
-                end
+        if shouldAim then
+            local target, pos = getBestTarget()
+            if target and pos then
+                smoothAim(pos)
             end
         end
     end
@@ -691,7 +661,7 @@ end
 RunService.RenderStepped:Connect(onRender)
 
 -- ============================================================
--- 11. LIMPEZA FINAL
+-- 10. LIMPEZA
 -- ============================================================
 LocalPlayer.CharacterRemoving:Connect(function()
     for _, esp in pairs(espObjects) do
@@ -704,4 +674,6 @@ LocalPlayer.CharacterRemoving:Connect(function()
     if fovCircle then fovCircle:Remove() fovCircle = nil end
 end)
 
-print("✅ GBICA Mobile Loader carregado com sucesso!")
+print("✅ GBICA v3.0 Loader carregado com sucesso!")
+print("🎯 Clique com o botão direito para mirar.")
+print("📱 Clique no menu para alternar opções.")
